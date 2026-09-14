@@ -1,8 +1,11 @@
+import 'package:agendamento_app/app/models/barbershop.dart';
 import 'package:agendamento_app/app/screens/barber_appointments_tab.dart';
 import 'package:agendamento_app/app/screens/barber_dashboard_tab.dart';
 import 'package:agendamento_app/app/screens/barber_financial_tab.dart';
 import 'package:agendamento_app/app/screens/barber_more_tab.dart';
+import 'package:agendamento_app/app/screens/barber_premium_page.dart';
 import 'package:agendamento_app/app/screens/barber_profile_content.dart';
+import 'package:agendamento_app/app/services/app_firestore_service.dart';
 import 'package:agendamento_app/app/services/messaging_service.dart';
 import 'package:agendamento_app/app/widgets/notification_bell_button.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,6 +20,20 @@ class BarberHomePage extends StatefulWidget {
 
 class _BarberHomePageState extends State<BarberHomePage> {
   int _currentIndex = 0;
+  Barbershop? _barbershop;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBarbershop();
+  }
+
+  Future<void> _loadBarbershop() async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    final barbershop = await AppFirestoreService().getBarbershopByOwner(userId);
+    if (mounted) setState(() => _barbershop = barbershop);
+  }
 
   Future<void> _logout() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
@@ -44,19 +61,39 @@ class _BarberHomePageState extends State<BarberHomePage> {
 
   Future<void> _openHistory() => _openSection(
         title: 'Histórico',
-        child: const BarberAppointmentsTab(
+        child: BarberAppointmentsTab(
           view: BarberAppointmentsView.history,
+          isPremium: _isPremium,
+          onOpenPremium: _openPremium,
         ),
       );
 
   Future<void> _openFinancial() => _openSection(
         title: 'Financeiro',
-        child: BarberFinancialTab(onOpenBarbershop: _openBarbershop),
+        child: BarberFinancialTab(
+          isPremium: _isPremium,
+          onOpenPremium: _openPremium,
+          onOpenBarbershop: _openBarbershop,
+        ),
+      );
+
+  bool get _isPremium =>
+      _barbershop?.premiumActive == true &&
+      (_barbershop?.premiumUntil == null ||
+          _barbershop!.premiumUntil!.isAfter(DateTime.now()));
+
+  Future<void> _openPremium() => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => const BarberPremiumPage(),
+        ),
       );
 
   Future<void> _openBarbershop() => _openSection(
         title: 'Minha barbearia',
-        child: const BarberProfileContent(),
+        child: BarberProfileContent(
+          isPremium: _isPremium,
+          onOpenPremium: _openPremium,
+        ),
       );
 
   @override
@@ -107,12 +144,17 @@ class _BarberHomePageState extends State<BarberHomePage> {
         0 => BarberDashboardTab(
             onOpenAgenda: () => setState(() => _currentIndex = 1),
           ),
-        1 => const BarberAppointmentsTab(),
+        1 => BarberAppointmentsTab(
+            isPremium: _isPremium,
+            onOpenPremium: _openPremium,
+          ),
         _ => BarberMoreTab(
+            isPremium: _isPremium,
             onOpenFinancial: _openFinancial,
             onOpenHistory: _openHistory,
             onOpenBarbershop: _openBarbershop,
             onLogout: _logout,
+            onOpenPremium: _openPremium,
           ),
       },
       bottomNavigationBar: SafeArea(

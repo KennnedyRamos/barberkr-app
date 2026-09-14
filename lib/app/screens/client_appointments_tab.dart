@@ -11,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 class ClientAppointmentsTab extends StatefulWidget {
-  const ClientAppointmentsTab({super.key});
+  final VoidCallback? onOpenBarbershops;
+
+  const ClientAppointmentsTab({super.key, this.onOpenBarbershops});
 
   @override
   State<ClientAppointmentsTab> createState() => _ClientAppointmentsTabState();
@@ -56,7 +58,7 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
   bool _canCancel(String date, String hour) {
     if (date.isEmpty || hour.isEmpty) return false;
     final dateTime = DateTime.parse('$date' 'T' '$hour:00:00');
-    return dateTime.isAfter(DateTime.now().add(const Duration(hours: 6)));
+    return dateTime.isAfter(DateTime.now().add(const Duration(hours: 12)));
   }
 
   Future<void> _cancelAppointment(Map<String, dynamic> data) async {
@@ -67,7 +69,7 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Cancelamento não pode ser feito após 6h do horário.'),
+          content: Text('Cancelamento não pode ser feito após 12h do horário.'),
         ),
       );
       return;
@@ -283,7 +285,7 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
                   ],
                   const SizedBox(height: 8),
                   const Text(
-                    'Alterações respeitam a regra de 6h para cancelamento.',
+                    'Alterações respeitam a regra de 12h para cancelamento.',
                   ),
                 ],
               ),
@@ -409,12 +411,9 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
         });
 
         final listContent = docs.isEmpty
-            ? Center(
-                child: Text(
-                  _showHistory
-                      ? 'Nenhum histórico encontrado.'
-                      : 'Nenhum agendamento de hoje ou futuro.',
-                ),
+            ? _EmptyAppointments(
+                showingHistory: _showHistory,
+                onOpenBarbershops: widget.onOpenBarbershops,
               )
             : ListView.builder(
                 padding: const EdgeInsets.all(16.0),
@@ -517,7 +516,7 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
                             const Padding(
                               padding: EdgeInsets.only(top: 4.0),
                               child: Text(
-                                'Cancelamento permitido até 6h antes do horário.',
+                                'Cancelamento permitido até 12h antes do horário.',
                               ),
                             ),
                           if (!isCancelled)
@@ -575,6 +574,7 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
                                     },
                                   );
                                 }
+
                                 return TextButton.icon(
                                   onPressed: () => _showReviewDialog(
                                     barberId: barberId,
@@ -837,6 +837,82 @@ class _ClientAppointmentsTabState extends State<ClientAppointmentsTab> {
           ],
         );
       },
+    );
+  }
+}
+
+class _EmptyAppointments extends StatelessWidget {
+  final bool showingHistory;
+  final VoidCallback? onOpenBarbershops;
+
+  const _EmptyAppointments({
+    required this.showingHistory,
+    this.onOpenBarbershops,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (showingHistory) {
+      return const Center(child: Text('Nenhum histórico encontrado.'));
+    }
+
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_available_rounded,
+                size: 56, color: colors.primary),
+            const SizedBox(height: 14),
+            Text(
+              'Você ainda não possui agendamentos.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Encontre uma barbearia e marque seu próximo atendimento.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (onOpenBarbershops != null) ...[
+              const SizedBox(height: 22),
+              Card(
+                color: colors.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    children: [
+                      Icon(Icons.calendar_month_rounded,
+                          color: colors.primary, size: 30),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Encontre uma barbearia',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Os planos aparecem somente dentro da barbearia que os oferece. Escolha uma barbearia para consultar os planos disponíveis.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: onOpenBarbershops,
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        label: const Text('Buscar barbearias próximas'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

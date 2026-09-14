@@ -188,10 +188,10 @@ class AppointmentService {
         if (scheduledAt == null) {
           throw Exception('Agendamento sem data válida para cancelamento.');
         }
-        final cancelDeadline = scheduledAt.subtract(const Duration(hours: 6));
+        final cancelDeadline = scheduledAt.subtract(const Duration(hours: 12));
         if (DateTime.now().isAfter(cancelDeadline)) {
           throw Exception(
-              'Prazo de cancelamento expirado (6h antes do horário).');
+              'Prazo de cancelamento expirado (12h antes do horário).');
         }
       }
 
@@ -459,7 +459,7 @@ class AppointmentService {
         }
       }
       if (scheduledAt == null) continue;
-      if (scheduledAt.isBefore(now.add(const Duration(hours: 6)))) {
+      if (scheduledAt.isBefore(now.add(const Duration(hours: 12)))) {
         continue;
       }
       await cancelAppointment(

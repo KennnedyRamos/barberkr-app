@@ -2,6 +2,7 @@ import 'package:agendamento_app/app/services/appointment_service.dart';
 import 'package:agendamento_app/app/services/notification_service.dart';
 import 'package:agendamento_app/app/utils/cancellation_utils.dart';
 import 'package:agendamento_app/app/widgets/confirm_dialog.dart';
+import 'package:agendamento_app/app/widgets/premium_access.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,10 +12,14 @@ enum BarberAppointmentsView { agenda, history }
 
 class BarberAppointmentsTab extends StatefulWidget {
   final BarberAppointmentsView view;
+  final bool isPremium;
+  final VoidCallback? onOpenPremium;
 
   const BarberAppointmentsTab({
     super.key,
     this.view = BarberAppointmentsView.agenda,
+    this.isPremium = true,
+    this.onOpenPremium,
   });
 
   @override
@@ -280,14 +285,25 @@ class _BarberAppointmentsTabState extends State<BarberAppointmentsTab> {
         final appointment = visible[index];
         return _AppointmentCard(
           appointment: appointment,
-          onCancel:
-              appointment.isActive ? () => _cancelAsBarber(appointment) : null,
+          onCancel: appointment.isActive && widget.isPremium
+              ? () => _cancelAsBarber(appointment)
+              : null,
+          showPremiumTag: appointment.isActive && !widget.isPremium,
+          onOpenPremium: widget.onOpenPremium,
         );
       },
     );
   }
 
   Widget _buildHistory(List<_BarberAppointmentRecord> appointments) {
+    if (!widget.isPremium) {
+      return PremiumScreenGate(
+        title: 'Histórico é um recurso Premium',
+        description:
+            'Assine para consultar filtros, cancelamentos e o histórico completo da sua barbearia.',
+        onSubscribe: widget.onOpenPremium,
+      );
+    }
     final allEvents = _buildHistoryEvents(appointments);
     final filteredEvents = allEvents.where((event) {
       if (!_matchesHistoryPeriod(event.appointment.scheduledAt)) {
@@ -544,10 +560,14 @@ class _HistoryFilters extends StatelessWidget {
 class _AppointmentCard extends StatelessWidget {
   final _BarberAppointmentRecord appointment;
   final VoidCallback? onCancel;
+  final bool showPremiumTag;
+  final VoidCallback? onOpenPremium;
 
   const _AppointmentCard({
     required this.appointment,
     required this.onCancel,
+    required this.showPremiumTag,
+    required this.onOpenPremium,
   });
 
   @override
@@ -632,6 +652,21 @@ class _AppointmentCard extends StatelessWidget {
                   foregroundColor: colors.error,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
+              ),
+            ],
+            if (showPremiumTag) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const PremiumBadge(),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: onOpenPremium,
+                      child: const Text('Assine para cancelar'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ],

@@ -249,6 +249,8 @@ class AppFirestoreService {
       'planId': planId,
       'planName': planName,
       'planServices': planServices,
+      'startedAt': FieldValue.serverTimestamp(),
+      'renewalEnabled': true,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
@@ -261,5 +263,27 @@ class AppFirestoreService {
     final doc = await _db.collection('monthly_plans').doc(id).get();
     if (!doc.exists) return null;
     return doc.data();
+  }
+
+  Future<void> cancelMonthlyPlan({
+    required String clientId,
+    required String barberId,
+  }) async {
+    final id = '${clientId}_$barberId';
+    await _db.collection('monthly_plans').doc(id).update({
+      'renewalEnabled': false,
+      'cancelledAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getMonthlyPlansForClient(
+    String clientId,
+  ) async {
+    final snapshot = await _db
+        .collection('monthly_plans')
+        .where('clientId', isEqualTo: clientId)
+        .get();
+    return snapshot.docs.map((doc) => doc.data()).toList(growable: false);
   }
 }

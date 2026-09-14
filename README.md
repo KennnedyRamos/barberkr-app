@@ -17,7 +17,7 @@
 
 ## ✨ Sobre o projeto
 
-O **BarberKR** é uma aplicação mobile construída em Flutter para conectar clientes e barbearias em uma experiência única de descoberta, agendamento e atendimento. O cliente encontra estabelecimentos próximos, consulta horários, conversa com a barbearia e acompanha seus agendamentos. O barbeiro recebe uma visão operacional do dia, administra serviços, planos, disponibilidade, histórico e faturamento.
+O **BarberKR** é uma aplicação mobile construída em Flutter para conectar clientes e barbearias em uma experiência única de descoberta, agendamento e atendimento. O cliente encontra estabelecimentos próximos, consulta horários, conversa com a barbearia e acompanha seus agendamentos. O barbeiro recebe uma visão operacional do dia, administra serviços, planos, disponibilidade, histórico e faturamento. Cada barbearia define os próprios planos mensais para clientes, enquanto o **BarberKR Premium é exclusivo do barbeiro**.
 
 Mais do que uma demonstração visual, este projeto explora problemas reais de produto: concorrência na reserva do mesmo horário, identidade de quem cancelou, comunicação individual, notificações persistentes, privacidade, pagamentos marketplace e preparação de releases assinados.
 
@@ -34,6 +34,8 @@ Mais do que uma demonstração visual, este projeto explora problemas reais de p
 - Descoberta de barbearias próximas, com consentimento de localização.
 - Logo personalizada por barbearia e identidade visual moderna.
 - Pix, saldo Mercado Pago e dinheiro no local, com integração marketplace segura.
+- Planos mensais definidos pelo barbeiro e exibidos somente dentro da respectiva barbearia.
+- Recursos administrativos Premium sinalizados de forma clara para o barbeiro.
 - Painel financeiro mensal com gráfico diário, serviços realizados, taxas e movimentações.
 - Navegação do barbeiro reduzida a **Resumo, Agenda e Mais**, priorizando as ações diárias.
 - Regras de segurança, CI, testes e assinatura de release para Android.
@@ -50,8 +52,9 @@ Mais do que uma demonstração visual, este projeto explora problemas reais de p
 - Busca por nome, bairro ou cidade.
 - Sugestões ordenadas por proximidade; a localização do cliente não é persistida.
 - Perfil público da barbearia, serviços, preços, avaliações e rotas.
-- Consulta de horários e agendamento com pagamento no local.
-- Planos mensais com recorrência de horários.
+- Consulta de horários e agendamento com pagamento em dinheiro ou online quando habilitado pela barbearia.
+- Planos mensais definidos pelo barbeiro e disponíveis apenas na página da barbearia.
+- Cancelamento de agendamento permitido até 12 horas antes do horário.
 - Histórico de atendimentos confirmados.
 - Avaliação da barbearia após o atendimento.
 - Chat e central de notificações.
@@ -63,6 +66,7 @@ Mais do que uma demonstração visual, este projeto explora problemas reais de p
 - Agenda operacional e conclusão de atendimentos.
 - Histórico com filtros por dia, mês ou ano, nome do cliente e tipo de evento.
 - Cadastro de serviços, preços, planos, endereço, localização e horários.
+- Premium exclusivo para liberar pagamentos online, cancelamentos administrativos, histórico e financeiro.
 - Personalização da logo exibida aos clientes.
 - Conversas individuais e notificações de agendamento, cancelamento e pagamento.
 - Conexão de uma conta Mercado Pago por barbearia, quando o backend estiver publicado.
@@ -75,6 +79,7 @@ O projeto foi desenvolvido como um produto real, e não apenas como uma coleçã
 
 - **Produto:** descoberta local, agenda, comunicação e financeiro no mesmo aplicativo.
 - **UX:** ações frequentes permanecem na navegação principal; recursos administrativos ficam agrupados.
+- **Planos:** planos mensais pertencem à barbearia que os criou; o Premium comercial pertence somente ao barbeiro.
 - **Backend:** valores e comissão são calculados no servidor, nunca confiados ao cliente Flutter.
 - **Escalabilidade:** consultas possuem limites, avaliações são carregadas em lotes e imagens são comprimidas e mantidas em cache durante a renderização.
 - **Entrega:** análise estática, testes Flutter/Node, auditoria de dependências, CI e artefatos Android assinados.
@@ -193,11 +198,17 @@ Se aparecer `INSTALL_FAILED_INSUFFICIENT_STORAGE`, abra **Android Studio → Dev
 dart format --set-exit-if-changed lib test
 flutter analyze
 flutter test
+npm audit --prefix functions --omit=dev --audit-level=high
+npm test --prefix functions
 node --check functions/index.js
 node --check functions/mercado_pago.js
 ```
 
-Os testes cobrem disponibilidade, identificação do responsável pelo cancelamento, IDs estáveis de conversa, prioridade da logo, contador de notificações, navegação de gestão, layout financeiro compacto, política promocional de comissão, resumo financeiro e agrupamentos por dia/serviço.
+Os testes cobrem disponibilidade, identificação do responsável pelo cancelamento,
+regra de 12 horas, IDs estáveis de conversa, prioridade da logo, contador de
+notificações, navegação de gestão, layout financeiro compacto, proteção Premium,
+política promocional de comissão, checkout anual, resumo financeiro e
+agrupamentos por dia/serviço.
 
 ## 💳 Mercado Pago
 
@@ -206,6 +217,22 @@ O agendamento com **Dinheiro — pagar no local** funciona independentemente da 
 No lançamento, cada barbearia recebe 30 dias sem comissão do BarberKR. Depois do período promocional, o backend aplica automaticamente 3% apenas aos pagamentos online aprovados; pagamentos no local não geram comissão para a plataforma. O painel financeiro informa receitas e taxas, mas o saldo real e as transferências via Pix são administrados na conta Mercado Pago da barbearia.
 
 As Cloud Functions exigem um projeto Firebase no plano **Blaze** para publicação. Enquanto o backend não estiver publicado, o aplicativo mantém automaticamente a alternativa de pagamento no local. Consulte o guia completo em [docs/mercado_pago_setup.md](docs/mercado_pago_setup.md).
+
+## ⭐ BarberKR Premium
+
+O Premium é uma assinatura exclusiva do dono da barbearia. Ele não é um plano
+oferecido aos clientes. Sem Premium, o barbeiro mantém acesso à agenda básica,
+mas os recursos administrativos avançados ficam sinalizados e protegidos:
+
+- pagamentos online via Mercado Pago;
+- cancelamento administrativo de agendamentos;
+- histórico completo;
+- painel financeiro;
+- conexão da conta Mercado Pago.
+
+O cancelamento do Premium interrompe a renovação futura sem reembolso. O acesso
+permanece disponível até o fim do período contratado, conforme o estado oficial
+da assinatura no backend.
 
 ## 📦 Release Android
 

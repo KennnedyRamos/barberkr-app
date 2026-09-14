@@ -54,6 +54,24 @@ async function saveNotificationHistory(userId, notificationId, data) {
   } catch (error) {
     if (error?.code !== 6 && error?.code !== 'already-exists') throw error;
   }
+
+}
+
+async function assertPremiumBarbershop(barberId) {
+  const shopSnap = await admin.firestore()
+    .collection('barbershops')
+    .doc(barberId)
+    .get();
+  const shop = shopSnap.data();
+  const premiumUntil = shop?.premiumUntil?.toDate?.();
+  const active = shop?.premiumActive === true &&
+    (!premiumUntil || premiumUntil.getTime() > Date.now());
+  if (!active) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Assine o BarberKR Premium para cancelar agendamentos.'
+    );
+  }
 }
 
 exports.cancelAppointment = functions.https.onCall(async (data, context) => {
@@ -91,19 +109,24 @@ exports.cancelAppointment = functions.https.onCall(async (data, context) => {
     if (!scheduledAt && appointment.date && appointment.hour) {
       scheduledAt = new Date(`${appointment.date}T${appointment.hour}:00:00-03:00`);
     }
+
     if (!scheduledAt) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'Agendamento sem data valida para cancelamento.'
       );
     }
-    const cancelDeadline = new Date(scheduledAt.getTime() - 6 * 60 * 60 * 1000);
+    const cancelDeadline = new Date(scheduledAt.getTime() - 12 * 60 * 60 * 1000);
     if (new Date() > cancelDeadline) {
       throw new functions.https.HttpsError(
         'failed-precondition',
-        'Prazo de cancelamento expirado (6h antes do horario).'
+        'Prazo de cancelamento expirado (12h antes do horario).'
       );
     }
+  }
+
+  if (isBarber) {
+    await assertPremiumBarbershop(userId);
   }
 
   const cancelReason = data?.reason && String(data.reason).trim().length > 0

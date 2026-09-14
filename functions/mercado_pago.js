@@ -24,6 +24,51 @@ const MP_SECRET_NAMES = [
 
 const MP_API_URL = 'https://api.mercadopago.com';
 const CHECKOUT_TTL_MINUTES = 30;
+const PREMIUM_ANNUAL_PRICE = 359.88;
+
+function buildPremiumPreference({
+  intentId,
+  clientEmail,
+  paymentMethod,
+}) {
+  const paymentMethods = {
+    pix: {
+      installments: 1,
+      excluded_payment_types: [{ id: 'credit_card' }, { id: 'debit_card' }],
+    },
+    card: {
+      installments: 12,
+      excluded_payment_types: [{ id: 'ticket' }, { id: 'bank_transfer' }],
+    },
+  }[paymentMethod];
+
+  if (!paymentMethods) {
+    throw new Error('Forma de pagamento invalida');
+  }
+
+  return {
+    items: [
+      {
+        id: 'barberkr-premium-anual',
+        title: 'BarberKR Premium anual',
+        description: 'Plano Premium anual em pagamento unico.',
+        quantity: 1,
+        unit_price: PREMIUM_ANNUAL_PRICE,
+        currency_id: 'BRL',
+      },
+    ],
+    payer: clientEmail ? { email: clientEmail } : undefined,
+    external_reference: `premium:${intentId}`,
+    metadata: {
+      premium_plan: 'annual',
+      auto_renew: false,
+    },
+    payment_methods: paymentMethods,
+  };
+}
+
+exports.PREMIUM_ANNUAL_PRICE = PREMIUM_ANNUAL_PRICE;
+exports.buildPremiumPreference = buildPremiumPreference;
 
 function db() {
   return admin.firestore();
@@ -277,6 +322,23 @@ async function assertBarbershopOwner(uid) {
   return { shopRef, shopData: shopSnap.data() };
 }
 
+function isPremiumActive(shopData) {
+  if (shopData?.premiumActive !== true) return false;
+  const premiumUntil = shopData.premiumUntil?.toDate?.();
+  return !premiumUntil || premiumUntil.getTime() > Date.now();
+}
+
+async function assertPremiumBarbershop(uid) {
+  const { shopData } = await assertBarbershopOwner(uid);
+  if (!isPremiumActive(shopData)) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Assine o BarberKR Premium para liberar este recurso.'
+    );
+  }
+  return shopData;
+}
+
 exports.createMercadoPagoConnectUrl = functions
   .runWith({ secrets: MP_SECRET_NAMES })
   .https.onCall(async (_, context) => {
@@ -284,7 +346,7 @@ exports.createMercadoPagoConnectUrl = functions
       throw new functions.https.HttpsError('unauthenticated', 'Usuario nao autenticado.');
     }
     try {
-      await assertBarbershopOwner(context.auth.uid);
+      await assertPremiumBarbershop(context.auth.uid);
       const state = crypto.randomBytes(32).toString('hex');
       const codeVerifier = crypto.randomBytes(48).toString('base64url');
       const codeChallenge = crypto
@@ -324,7 +386,7 @@ exports.getMercadoPagoConnectionStatus = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Usuario nao autenticado.');
     }
-    const { shopData } = await assertBarbershopOwner(context.auth.uid);
+    const shopData = await assertPremiumBarbershop(context.auth.uid);
     const accountSnap = await db()
       .collection('payment_accounts')
       .doc(context.auth.uid)
@@ -350,7 +412,7 @@ exports.getBarberFinancialDashboard = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Usuario nao autenticado.');
     }
-    const { shopData } = await assertBarbershopOwner(context.auth.uid);
+    const shopData = await assertPremiumBarbershop(context.auth.uid);
 
     const nowMillis = Date.now();
     const period = financialPeriod(data, nowMillis);
@@ -664,6 +726,12 @@ exports.createMercadoPagoCheckout = functions
       throw new functions.https.HttpsError('not-found', 'Barbearia nao encontrada.');
     }
     const shop = shopSnap.data();
+    if (!isPremiumActive(shop)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Assine o BarberKR Premium para habilitar pagamentos online.'
+      );
+    }
     if (shop.paymentConnected !== true) {
       throw new functions.https.HttpsError(
         'failed-precondition',

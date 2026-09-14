@@ -1,5 +1,6 @@
 import 'package:agendamento_app/app/screens/client_appointments_tab.dart';
 import 'package:agendamento_app/app/screens/client_barbershops_tab.dart';
+import 'package:agendamento_app/app/screens/client_financial_tab.dart';
 import 'package:agendamento_app/app/screens/client_profile_page.dart';
 import 'package:agendamento_app/app/services/messaging_service.dart';
 import 'package:agendamento_app/app/widgets/notification_bell_button.dart';
@@ -9,7 +10,7 @@ import 'package:flutter/material.dart';
 class ClientHomePage extends StatefulWidget {
   final int initialTab;
 
-  const ClientHomePage({super.key, this.initialTab = 0});
+  const ClientHomePage({super.key, this.initialTab = 1});
 
   @override
   State<ClientHomePage> createState() => _ClientHomePageState();
@@ -24,9 +25,9 @@ class _ClientHomePageState extends State<ClientHomePage>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: widget.initialTab,
+      initialIndex: widget.initialTab.clamp(0, 2),
     );
     _currentIndex = widget.initialTab;
     _tabController.addListener(_syncSelectedTab);
@@ -82,9 +83,12 @@ class _ClientHomePageState extends State<ClientHomePage>
           children: [
             const Text('BarberKR'),
             Text(
-              _currentIndex == 0 ? 'Descobrir' : 'Minha agenda',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+                switch (_currentIndex) {
+                  0 => 'Descobrir',
+                  1 => 'Minha agenda',
+                  _ => 'Financeiro',
+                },
+                style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         actions: [
@@ -110,9 +114,12 @@ class _ClientHomePageState extends State<ClientHomePage>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          ClientBarbershopsTab(),
-          ClientAppointmentsTab(),
+        children: [
+          const ClientBarbershopsTab(),
+          ClientAppointmentsTab(
+            onOpenBarbershops: () => _tabController.animateTo(0),
+          ),
+          const ClientFinancialTab(),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -132,6 +139,11 @@ class _ClientHomePageState extends State<ClientHomePage>
                 icon: Icon(Icons.calendar_today_outlined),
                 selectedIcon: Icon(Icons.calendar_month_rounded),
                 label: 'Agenda',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.account_balance_wallet_outlined),
+                selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+                label: 'Financeiro',
               ),
             ],
           ),

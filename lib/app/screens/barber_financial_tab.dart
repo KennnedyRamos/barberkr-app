@@ -1,6 +1,7 @@
 import 'package:agendamento_app/app/models/financial_dashboard.dart';
 import 'package:agendamento_app/app/services/mercado_pago_service.dart';
 import 'package:agendamento_app/app/widgets/financial_dashboard_widgets.dart';
+import 'package:agendamento_app/app/widgets/premium_access.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -8,8 +9,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 class BarberFinancialTab extends StatefulWidget {
   final VoidCallback? onOpenBarbershop;
+  final VoidCallback? onOpenPremium;
+  final bool isPremium;
 
-  const BarberFinancialTab({super.key, this.onOpenBarbershop});
+  const BarberFinancialTab({
+    super.key,
+    this.onOpenBarbershop,
+    this.onOpenPremium,
+    this.isPremium = true,
+  });
 
   @override
   State<BarberFinancialTab> createState() => _BarberFinancialTabState();
@@ -97,6 +105,14 @@ class _BarberFinancialTabState extends State<BarberFinancialTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.isPremium) {
+      return PremiumScreenGate(
+        title: 'Financeiro é um recurso Premium',
+        description:
+            'Acompanhe faturamento, taxas, entradas e pagamentos online assinando o Premium.',
+        onSubscribe: widget.onOpenPremium,
+      );
+    }
     if (_loading && _dashboard == null) {
       return const Center(child: CircularProgressIndicator());
     }

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'monthly_plan.dart';
 import 'service_item.dart';
 
@@ -22,6 +24,8 @@ class Barbershop {
   final String? locationLabel;
   final bool paymentConnected;
   final String? paymentProvider;
+  final bool premiumActive;
+  final DateTime? premiumUntil;
   final bool hasLegacyPixData;
 
   Barbershop({
@@ -45,6 +49,8 @@ class Barbershop {
     this.locationLabel,
     this.paymentConnected = false,
     this.paymentProvider,
+    this.premiumActive = false,
+    this.premiumUntil,
     this.hasLegacyPixData = false,
   });
 
@@ -144,6 +150,10 @@ class Barbershop {
       locationLabel: locationLabel,
       paymentConnected: map['paymentConnected'] == true,
       paymentProvider: map['paymentProvider']?.toString(),
+      premiumActive: map['premiumActive'] == true,
+      premiumUntil: map['premiumUntil'] is Timestamp
+          ? (map['premiumUntil'] as Timestamp).toDate()
+          : DateTime.tryParse(map['premiumUntil']?.toString() ?? ''),
       hasLegacyPixData: map.keys.any(
         const {'pixKey', 'pixKeyType', 'pixBankName'}.contains,
       ),

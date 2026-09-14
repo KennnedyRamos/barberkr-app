@@ -10,13 +10,21 @@ import 'package:agendamento_app/app/utils/map_utils.dart';
 import 'package:agendamento_app/app/widgets/barbershop_image.dart';
 import 'package:agendamento_app/app/widgets/legal_links_card.dart';
 import 'package:agendamento_app/app/widgets/mercado_pago_connect_card.dart';
+import 'package:agendamento_app/app/widgets/premium_access.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
 class BarberProfileContent extends StatefulWidget {
-  const BarberProfileContent({super.key});
+  final bool isPremium;
+  final VoidCallback? onOpenPremium;
+
+  const BarberProfileContent({
+    super.key,
+    this.isPremium = true,
+    this.onOpenPremium,
+  });
 
   @override
   State<BarberProfileContent> createState() => _BarberProfileContentState();
@@ -394,7 +402,15 @@ class _BarberProfileContentState extends State<BarberProfileContent> {
       child: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          const MercadoPagoConnectCard(),
+          if (widget.isPremium)
+            const MercadoPagoConnectCard()
+          else
+            PremiumFeatureCard(
+              title: 'Receba pagamentos online com o Premium',
+              description:
+                  'A conexão com o Mercado Pago e os pagamentos por cartão ou Pix ficam disponíveis no plano Premium.',
+              onSubscribe: widget.onOpenPremium,
+            ),
           const SizedBox(height: 18),
           const Text(
             'Dados pessoais',

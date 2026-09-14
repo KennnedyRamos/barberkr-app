@@ -1,3 +1,4 @@
+import 'package:agendamento_app/app/widgets/premium_access.dart';
 import 'package:flutter/material.dart';
 
 class BarberMoreTab extends StatelessWidget {
@@ -5,6 +6,8 @@ class BarberMoreTab extends StatelessWidget {
   final VoidCallback onOpenHistory;
   final VoidCallback onOpenBarbershop;
   final VoidCallback onLogout;
+  final VoidCallback? onOpenPremium;
+  final bool isPremium;
 
   const BarberMoreTab({
     super.key,
@@ -12,6 +15,8 @@ class BarberMoreTab extends StatelessWidget {
     required this.onOpenHistory,
     required this.onOpenBarbershop,
     required this.onLogout,
+    this.onOpenPremium,
+    this.isPremium = true,
   });
 
   @override
@@ -20,6 +25,15 @@ class BarberMoreTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
       children: [
+        if (!isPremium) ...[
+          PremiumFeatureCard(
+            title: 'Libere o potencial da sua barbearia',
+            description:
+                'Pagamentos online, cancelamentos, histórico e financeiro são recursos Premium.',
+            onSubscribe: onOpenPremium,
+          ),
+          const SizedBox(height: 22),
+        ],
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -68,6 +82,7 @@ class BarberMoreTab extends StatelessWidget {
           title: 'Financeiro',
           subtitle: 'Faturamento, taxas, entradas e serviços realizados',
           onTap: onOpenFinancial,
+          isPremium: !isPremium,
         ),
         const SizedBox(height: 10),
         _MoreTile(
@@ -75,6 +90,7 @@ class BarberMoreTab extends StatelessWidget {
           title: 'Histórico',
           subtitle: 'Atendimentos concluídos e filtros por período',
           onTap: onOpenHistory,
+          isPremium: !isPremium,
         ),
         const SizedBox(height: 10),
         _MoreTile(
@@ -104,6 +120,7 @@ class _MoreTile extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   final bool isDestructive;
+  final bool isPremium;
 
   const _MoreTile({
     required this.icon,
@@ -111,6 +128,7 @@ class _MoreTile extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.isDestructive = false,
+    this.isPremium = false,
   });
 
   @override
@@ -153,6 +171,8 @@ class _MoreTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (isPremium) const PremiumBadge(),
+              if (isPremium) const SizedBox(width: 8),
               Icon(Icons.chevron_right_rounded, color: colors.outline),
             ],
           ),
