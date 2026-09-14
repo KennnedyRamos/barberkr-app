@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:agendamento_app/app/models/barbershop.dart';
 import 'package:agendamento_app/app/models/monthly_plan.dart';
 import 'package:agendamento_app/app/services/app_firestore_service.dart';
 import 'package:agendamento_app/app/services/appointment_service.dart';
+import 'package:agendamento_app/app/services/mercado_pago_service.dart';
+import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PlanDetailsPage extends StatefulWidget {
   final Barbershop barbershop;
@@ -20,13 +25,30 @@ class PlanDetailsPage extends StatefulWidget {
   State<PlanDetailsPage> createState() => _PlanDetailsPageState();
 }
 
-class _PlanDetailsPageState extends State<PlanDetailsPage> {
+class _PlanDetailsPageState extends State<PlanDetailsPage>
+    with WidgetsBindingObserver {
   int _weekday = DateTime.monday;
   String? _hour;
+  final MercadoPagoService _paymentService = MercadoPagoService();
+  final AppLinks _appLinks = AppLinks();
+  Timer? _pollTimer;
+  StreamSubscription<Uri>? _linkSubscription;
+  bool _loading = false;
+  String? _paymentIntentId;
+  int? _pendingWeekday;
+  String? _pendingHour;
+  String? _paymentMessage;
+  bool _finalizingPayment = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      if (uri.scheme == 'barberkr' && uri.host == 'payments') {
+        _refreshPayment();
+      }
+    });
     final availableDays = _availableDays();
     if (availableDays.isNotEmpty) {
       _weekday = availableDays.first;
@@ -35,6 +57,19 @@ class _PlanDetailsPageState extends State<PlanDetailsPage> {
         _hour = hours.first;
       }
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshPayment();
   }
 
   List<int> _availableDays() {
@@ -73,6 +108,108 @@ class _PlanDetailsPageState extends State<PlanDetailsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final checkout = await _paymentService.createMonthlyPlanCheckout(
+        barbershopId: widget.barbershop.id,
+        planId: widget.plan.id,
+        planName: widget.plan.name,
+        weekday: weekday,
+        hour: hour,
+        amount: widget.plan.price,
+      );
+      if (!mounted) return;
+      setState(() {
+        _paymentIntentId = checkout.paymentIntentId;
+        _pendingWeekday = weekday;
+        _pendingHour = hour;
+        _paymentMessage =
+            'Pagamento pendente. Conclua o checkout para ativar o plano.';
+      });
+      _startPolling();
+      final opened = await launchUrl(
+        checkout.checkoutUrl,
+        mode: LaunchMode.inAppBrowserView,
+      );
+      if (!opened) throw Exception('Não foi possível abrir o checkout.');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Checkout aberto. Conclua o pagamento para ativar o plano.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Não foi possível iniciar o pagamento: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _refreshPayment(),
+    );
+  }
+
+  Future<void> _refreshPayment() async {
+    final intentId = _paymentIntentId;
+    if (intentId == null || _finalizingPayment) return;
+    try {
+      final status = await _paymentService.paymentStatus(intentId);
+      if (status.status == 'pending' || status.status == 'in_process') {
+        if (mounted) {
+          setState(() => _paymentMessage =
+              'Pagamento pendente. Aguardando confirmação do Mercado Pago.');
+        }
+        return;
+      }
+      if (status.status == 'rejected' ||
+          status.status == 'cancelled' ||
+          status.status == 'expired') {
+        _pollTimer?.cancel();
+        if (mounted) {
+          setState(() => _paymentMessage =
+              'Pagamento não aprovado. O plano não foi ativado.');
+        }
+        return;
+      }
+      if (status.status != 'paid') return;
+      _pollTimer?.cancel();
+      _finalizingPayment = true;
+      if (mounted) {
+        setState(() =>
+            _paymentMessage = 'Pagamento aprovado. Ativando seu plano...');
+      }
+      await _paymentService.finalizeMonthlyPlanCheckout(intentId);
+      final weekday = _pendingWeekday;
+      final hour = _pendingHour;
+      if (weekday == null || hour == null) return;
+      await _completePlan(weekday: weekday, hour: hour);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _paymentMessage =
+            'Não foi possível confirmar o pagamento. Tentaremos novamente.');
+        _startPolling();
+      }
+    } finally {
+      _finalizingPayment = false;
+    }
+  }
+
+  Future<void> _completePlan({
+    required int weekday,
+    required String hour,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
     final firestoreService = AppFirestoreService();
     final profile = await firestoreService.getUserProfile(user.uid);
     final clientName = profile == null
@@ -94,22 +231,10 @@ class _PlanDetailsPageState extends State<PlanDetailsPage> {
       monthStart: monthStart,
     );
 
-    await firestoreService.createMonthlyPlan(
-      clientId: user.uid,
-      barberId: widget.barbershop.ownerId,
-      barbershopId: widget.barbershop.id,
-      weekday: weekday,
-      hour: hour,
-      price: widget.plan.price,
-      planId: widget.plan.id,
-      planName: widget.plan.name,
-      planServices: widget.plan.services,
-    );
-
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Plano criado. Agendamentos: $created'),
+        content: Text('Plano ativado. Agendamentos: $created'),
       ),
     );
     Navigator.pop(context);
@@ -248,6 +373,14 @@ class _PlanDetailsPageState extends State<PlanDetailsPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (_paymentMessage != null)
+              Card(
+                color: colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(_paymentMessage!),
+                ),
+              ),
             Text(
               widget.plan.name,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(

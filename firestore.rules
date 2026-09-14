@@ -5,6 +5,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function barberHasPremium(barbershopId, barberId) {
+      let shop = get(/databases/$(database)/documents/barbershops/$(barbershopId));
+      return shop.data.ownerId == barberId &&
+        shop.data.premiumActive == true &&
+        (!shop.data.keys().hasAny(['premiumUntil']) ||
+         shop.data.premiumUntil == null ||
+         shop.data.premiumUntil > request.time);
+    }
+
+    function canAccessConversationMessages(conversation) {
+      return request.auth.uid == conversation.clientId ||
+        (request.auth.uid == conversation.barberId &&
+         barberHasPremium(conversation.barbershopId, conversation.barberId));
+    }
+
     function hasValidBarbershopLogo() {
       return !request.resource.data.keys().hasAny(['logoData']) ||
          request.resource.data.logoData == null ||
@@ -88,7 +103,10 @@ service cloud.firestore {
         userId == recipientId &&
         message.senderId == request.auth.uid &&
         request.resource.data.actorId == message.senderId &&
-        request.resource.data.body == message.text &&
+        (request.resource.data.body == message.text ||
+         (userId == conversation.barberId &&
+          request.resource.data.body ==
+            conversation.clientName + ' enviou uma mensagem. Assine para ver e responder.')) &&
         request.resource.data.type == 'message_received' &&
         request.resource.data.barberId == conversation.barberId &&
         request.resource.data.clientId == conversation.clientId &&
@@ -256,10 +274,13 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if conversationIdIncludesCurrentUser(conversationId);
+        allow read: if exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+          canAccessConversationMessages(
+            get(/databases/$(database)/documents/conversations/$(conversationId)).data
+          );
         allow create: if isSignedIn() &&
           existsAfter(/databases/$(database)/documents/conversations/$(conversationId)) &&
-          isConversationParticipant(
+          canAccessConversationMessages(
             getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data
           ) &&
           request.resource.data.keys().hasAll(['senderId', 'text', 'createdAt']) &&
@@ -379,35 +400,7 @@ service cloud.firestore {
       allow read: if isSignedIn() &&
         (request.auth.uid == resource.data.clientId ||
          request.auth.uid == resource.data.barberId);
-      allow create: if isSignedIn() &&
-        request.auth.uid == request.resource.data.clientId &&
-        subscriptionId == request.resource.data.clientId + '_' +
-          request.resource.data.barberId &&
-        request.resource.data.keys().hasAll([
-          'clientId', 'barberId', 'barbershopId', 'weekday', 'hour', 'price',
-          'planId', 'planName', 'planServices', 'startedAt', 'renewalEnabled',
-          'updatedAt'
-        ]) &&
-        request.resource.data.keys().hasOnly([
-          'clientId', 'barberId', 'barbershopId', 'weekday', 'hour', 'price',
-          'planId', 'planName', 'planServices', 'startedAt', 'renewalEnabled',
-          'updatedAt'
-        ]) &&
-        request.resource.data.barbershopId == request.resource.data.barberId &&
-        exists(/databases/$(database)/documents/barbershops/$(request.resource.data.barbershopId)) &&
-        request.resource.data.weekday is int &&
-        request.resource.data.weekday >= 1 &&
-        request.resource.data.weekday <= 7 &&
-        request.resource.data.hour is string &&
-        request.resource.data.hour.matches('^([01]\\d|2[0-3])$') &&
-        request.resource.data.price is number &&
-        request.resource.data.price >= 0 &&
-        request.resource.data.planId is string &&
-        request.resource.data.planName is string &&
-        request.resource.data.planServices is list &&
-        request.resource.data.startedAt == request.time &&
-        request.resource.data.renewalEnabled is bool &&
-        request.resource.data.updatedAt == request.time;
+      allow create: if false;
       allow update: if isSignedIn() &&
         request.auth.uid == resource.data.clientId &&
         request.resource.data.clientId == resource.data.clientId &&

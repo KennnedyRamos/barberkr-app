@@ -110,11 +110,56 @@ class MercadoPagoService {
         paymentIntentId.isEmpty) {
       throw const FormatException('Checkout inválido recebido do servidor.');
     }
+
     return MercadoPagoCheckout(
       paymentIntentId: paymentIntentId,
       checkoutUrl: url,
       expiresAt: expiresAt,
     );
+  }
+
+  Future<MercadoPagoCheckout> createMonthlyPlanCheckout({
+    required String barbershopId,
+    required String planId,
+    required String planName,
+    required int weekday,
+    required String hour,
+    required double amount,
+  }) async {
+    final result = await _functions
+        .httpsCallable('createMonthlyPlanCheckout')
+        .call<Map<String, dynamic>>({
+      'barbershopId': barbershopId,
+      'planId': planId,
+      'planName': planName,
+      'weekday': weekday,
+      'hour': hour,
+      'amount': amount,
+    });
+    final url = Uri.tryParse(result.data['checkoutUrl']?.toString() ?? '');
+    final expiresAt = DateTime.tryParse(
+      result.data['expiresAt']?.toString() ?? '',
+    );
+    final paymentIntentId = result.data['paymentIntentId']?.toString() ?? '';
+    if (url == null ||
+        !url.hasScheme ||
+        expiresAt == null ||
+        paymentIntentId.isEmpty) {
+      throw const FormatException('Checkout do plano inválido.');
+    }
+    return MercadoPagoCheckout(
+      paymentIntentId: paymentIntentId,
+      checkoutUrl: url,
+      expiresAt: expiresAt,
+    );
+  }
+
+  Future<void> finalizeMonthlyPlanCheckout(String paymentIntentId) async {
+    await _functions
+        .httpsCallable('finalizeMonthlyPlanCheckout')
+        .call<Map<String, dynamic>>({
+      'paymentIntentId': paymentIntentId,
+    });
   }
 
   Future<MercadoPagoPaymentStatus> paymentStatus(

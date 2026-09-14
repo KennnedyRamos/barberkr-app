@@ -797,6 +797,130 @@ exports.createMercadoPagoCheckout = functions
         expiresAt,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+exports.createMonthlyPlanCheckout = functions
+      .runWith({ secrets: MP_SECRET_NAMES })
+      .https.onCall(async (data, context) => {
+        if (!context.auth) {
+          throw new functions.https.HttpsError('unauthenticated', 'Usuario nao autenticado.');
+        }
+        const barbershopId = String(data?.barbershopId || '').trim();
+        const planId = String(data?.planId || '').trim();
+        const planName = String(data?.planName || '').trim();
+        const weekday = Number(data?.weekday);
+        const hour = String(data?.hour || '').trim();
+        const amount = Number(data?.amount);
+        if (!barbershopId || !planId || !planName || !Number.isInteger(weekday) ||
+            weekday < 1 || weekday > 7 || !/^\d{2}$/.test(hour) ||
+            !Number.isFinite(amount) || amount <= 0) {
+          throw new functions.https.HttpsError('invalid-argument', 'Dados do plano invalidos.');
+        }
+
+        const shopSnap = await db().collection('barbershops').doc(barbershopId).get();
+        if (!shopSnap.exists) {
+          throw new functions.https.HttpsError('not-found', 'Barbearia nao encontrada.');
+        }
+        const shop = shopSnap.data();
+        if (!isPremiumActive(shop) || shop.paymentConnected !== true) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Esta barbearia ainda nao habilitou assinaturas online.'
+          );
+        }
+        const plan = (Array.isArray(shop.monthlyPlans) ? shop.monthlyPlans : [])
+          .find((item) => String(item.id || '') === planId);
+        if (!plan || Number(plan.price) !== amount) {
+          throw new functions.https.HttpsError('failed-precondition', 'Plano ou valor invalido.');
+        }
+        const openHours = shop.availability?.[String(weekday)] || [];
+        if (!openHours.includes(hour)) {
+          throw new functions.https.HttpsError('failed-precondition', 'Horario fora da agenda da barbearia.');
+        }
+
+        const sellerId = shop.ownerId || barbershopId;
+        const intentRef = db().collection('payment_intents').doc();
+        const expiresAtMillis = Date.now() + CHECKOUT_TTL_MINUTES * 60 * 1000;
+        const expiresAt = admin.firestore.Timestamp.fromMillis(expiresAtMillis);
+        const clientName = String(context.auth.token.name || context.auth.token.email || 'Cliente');
+        await intentRef.set({
+          type: 'monthly_plan',
+          clientId: context.auth.uid,
+          clientName,
+          clientEmail: context.auth.token.email || null,
+          sellerId,
+          barbershopId,
+          barbershopName: shop.nome,
+          planId,
+          planName,
+          planServices: Array.isArray(plan.services) ? plan.services : [],
+          amount,
+          weekday,
+          hour,
+          status: 'creating_checkout',
+          expiresAt,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        try {
+          const paymentAccount = await sellerPaymentAccount(sellerId);
+          const preference = await mercadoPagoRequest('/checkout/preferences', {
+            method: 'POST',
+            accessToken: paymentAccount.accessToken,
+            body: {
+              items: [{
+                id: intentRef.id,
+                title: `${planName} - ${shop.nome}`,
+                description: 'Assinatura mensal da barbearia',
+                category_id: 'services',
+                quantity: 1,
+                currency_id: 'BRL',
+                unit_price: amount,
+              }],
+              payer: { email: context.auth.token.email || undefined },
+              external_reference: intentRef.id,
+              metadata: { payment_intent_id: intentRef.id, monthly_plan: true },
+              notification_url: requireEnv('MP_WEBHOOK_URL'),
+              back_urls: {
+                success: `barberkr://payments/success?intentId=${intentRef.id}`,
+                failure: `barberkr://payments/failure?intentId=${intentRef.id}`,
+                pending: `barberkr://payments/pending?intentId=${intentRef.id}`,
+              },
+              auto_return: 'approved',
+              expires: true,
+              expiration_date_from: new Date().toISOString(),
+              expiration_date_to: new Date(expiresAtMillis).toISOString(),
+              payment_methods: {
+                excluded_payment_types: [
+                  { id: 'credit_card' }, { id: 'debit_card' }, { id: 'ticket' },
+                  { id: 'digital_currency' }, { id: 'atm' },
+                ],
+                default_payment_method_id: 'pix',
+                installments: 1,
+              },
+            },
+          });
+          const sandbox = process.env.MP_USE_SANDBOX === 'true';
+          const checkoutUrl = sandbox
+            ? preference.sandbox_init_point || preference.init_point
+            : preference.init_point;
+          await intentRef.update({
+            status: 'checkout_created',
+            preferenceId: preference.id,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return {
+            paymentIntentId: intentRef.id,
+            checkoutUrl,
+            expiresAt: new Date(expiresAtMillis).toISOString(),
+          };
+        } catch (error) {
+          await intentRef.update({
+            status: 'checkout_error',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          throw toHttpsError(error, 'Nao foi possivel criar o checkout do plano.');
+        }
+      });
       transaction.set(holdRef, {
         paymentIntentId: intentRef.id,
         clientId: context.auth.uid,
@@ -908,6 +1032,42 @@ exports.getPaymentIntentStatus = functions.https.onCall(async (data, context) =>
   };
 });
 
+exports.finalizeMonthlyPlanCheckout = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Usuario nao autenticado.');
+  }
+  const intentId = String(data?.paymentIntentId || '').trim();
+  if (!intentId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Pagamento nao informado.');
+  }
+  const intentRef = db().collection('payment_intents').doc(intentId);
+  const intentSnap = await intentRef.get();
+  if (!intentSnap.exists || intentSnap.data().clientId !== context.auth.uid) {
+    throw new functions.https.HttpsError('permission-denied', 'Sem acesso a este pagamento.');
+  }
+  const intent = intentSnap.data();
+  if (intent.type !== 'monthly_plan' || intent.status !== 'paid') {
+    throw new functions.https.HttpsError('failed-precondition', 'O pagamento do plano ainda nao foi aprovado.');
+  }
+  const planRef = db().collection('monthly_plans').doc(`${intent.clientId}_${intent.sellerId}`);
+  await planRef.set({
+    clientId: intent.clientId,
+    barberId: intent.sellerId,
+    barbershopId: intent.barbershopId,
+    weekday: intent.weekday,
+    hour: intent.hour,
+    price: intent.amount,
+    planId: intent.planId,
+    planName: intent.planName,
+    planServices: intent.planServices || [],
+    paymentIntentId: intentId,
+    startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    renewalEnabled: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { status: 'finalized' };
+});
+
 function validateWebhookSignature(request) {
   const signatureHeader = request.get('x-signature') || '';
   const requestId = request.get('x-request-id') || '';
@@ -1012,6 +1172,15 @@ async function applyPaymentUpdate(payment, sellerId) {
     if (finalStatuses.has(payment.status)) {
       await db().collection('payment_slot_holds').doc(intent.slotId).delete().catch(() => undefined);
     }
+    return;
+  }
+
+  if (intent.type === 'monthly_plan') {
+    await intentRef.update({
+      ...paymentFields,
+      status: 'paid',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
     return;
   }
 

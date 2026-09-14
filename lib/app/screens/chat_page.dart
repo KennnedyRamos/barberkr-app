@@ -1,4 +1,6 @@
 import 'package:agendamento_app/app/models/chat_conversation.dart';
+import 'package:agendamento_app/app/screens/barber_premium_page.dart';
+import 'package:agendamento_app/app/services/app_firestore_service.dart';
 import 'package:agendamento_app/app/services/chat_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +20,8 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocus = FocusNode();
   bool _sending = false;
+  bool _premiumLoading = true;
+  bool _barberPremium = false;
 
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
@@ -26,6 +30,7 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    _loadBarberAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userId = _currentUserId;
       if (userId != null) {
@@ -34,6 +39,23 @@ class _ChatPageState extends State<ChatPage> {
           conversationId: widget.conversation.id,
         );
       }
+    });
+  }
+
+  Future<void> _loadBarberAccess() async {
+    if (!_isBarber) {
+      if (mounted) setState(() => _premiumLoading = false);
+      return;
+    }
+    final shop = await AppFirestoreService().getBarbershopById(
+      widget.conversation.barbershopId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _barberPremium = shop?.premiumActive == true &&
+          (shop?.premiumUntil == null ||
+              shop!.premiumUntil!.isAfter(DateTime.now()));
+      _premiumLoading = false;
     });
   }
 
@@ -95,100 +117,160 @@ class _ChatPageState extends State<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<ChatMessage>>(
-              stream: _chatService.watchMessages(widget.conversation.id),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const _ChatState(
-                    icon: Icons.cloud_off_rounded,
-                    title: 'Conversa indisponível',
-                    message: 'Confira sua conexão e tente novamente.',
-                  );
-                }
+            child: _premiumLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _isBarber && !_barberPremium
+                    ? _PremiumChatPreview(
+                        clientName: widget.conversation.clientName,
+                      )
+                    : StreamBuilder<List<ChatMessage>>(
+                        stream:
+                            _chatService.watchMessages(widget.conversation.id),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              !snapshot.hasData) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return const _ChatState(
+                              icon: Icons.cloud_off_rounded,
+                              title: 'Conversa indisponível',
+                              message: 'Confira sua conexão e tente novamente.',
+                            );
+                          }
 
-                final messages = snapshot.data ?? const <ChatMessage>[];
-                if (messages.isEmpty) {
-                  return _ChatState(
-                    icon: Icons.forum_outlined,
-                    title: _isBarber
-                        ? 'Nenhuma mensagem ainda'
-                        : 'Fale com a barbearia',
-                    message: _isBarber
-                        ? 'Quando o cliente escrever, a conversa aparecerá aqui.'
-                        : 'Envie sua dúvida sobre serviços, horários ou atendimento.',
-                  );
-                }
+                          final messages =
+                              snapshot.data ?? const <ChatMessage>[];
+                          if (messages.isEmpty) {
+                            return _ChatState(
+                              icon: Icons.forum_outlined,
+                              title: _isBarber
+                                  ? 'Nenhuma mensagem ainda'
+                                  : 'Fale com a barbearia',
+                              message: _isBarber
+                                  ? 'Quando o cliente escrever, a conversa aparecerá aqui.'
+                                  : 'Envie sua dúvida sobre serviços, horários ou atendimento.',
+                            );
+                          }
 
-                return ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.fromLTRB(14, 18, 14, 12),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    return _MessageBubble(
-                      message: message,
-                      mine: message.senderId == _currentUserId,
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          Material(
-            color: colors.surfaceContainerLowest,
-            elevation: 8,
-            child: SafeArea(
-              top: false,
-              minimum: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      focusNode: _messageFocus,
-                      minLines: 1,
-                      maxLines: 5,
-                      maxLength: 1000,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Digite uma mensagem',
-                        counterText: '',
-                        filled: true,
-                        fillColor: colors.surfaceContainerHigh,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(22),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(22),
-                          borderSide: BorderSide.none,
-                        ),
+                          return ListView.builder(
+                            reverse: true,
+                            padding: const EdgeInsets.fromLTRB(14, 18, 14, 12),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final message = messages[index];
+                              return _MessageBubble(
+                                message: message,
+                                mine: message.senderId == _currentUserId,
+                              );
+                            },
+                          );
+                        },
                       ),
-                      onSubmitted: (_) => _send(),
+          ),
+          if (!_isBarber || _barberPremium)
+            Material(
+              color: colors.surfaceContainerLowest,
+              elevation: 8,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _messageFocus,
+                        minLines: 1,
+                        maxLines: 5,
+                        maxLength: 1000,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: 'Digite uma mensagem',
+                          counterText: '',
+                          filled: true,
+                          fillColor: colors.surfaceContainerHigh,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onSubmitted: (_) => _send(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _send,
-                    tooltip: 'Enviar',
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed: _sending ? null : _send,
+                      tooltip: 'Enviar',
+                      icon: _sending
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _PremiumChatPreview extends StatelessWidget {
+  final String clientName;
+
+  const _PremiumChatPreview({required this.clientName});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.lock_outline_rounded,
+                    size: 48, color: colors.primary),
+                const SizedBox(height: 16),
+                Text(
+                  '$clientName enviou uma mensagem',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Assine o BarberKR Premium para visualizar e responder mensagens dos seus clientes.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const BarberPremiumPage(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.workspace_premium_rounded),
+                  label: const Text('Conhecer o Premium'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

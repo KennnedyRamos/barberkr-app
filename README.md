@@ -234,6 +234,13 @@ O cancelamento do Premium interrompe a renovação futura sem reembolso. O acess
 permanece disponível até o fim do período contratado, conforme o estado oficial
 da assinatura no backend.
 
+Os planos mensais definidos por cada barbearia são diferentes do Premium do
+barbeiro. O cliente escolhe o plano, dia e horário, conclui o checkout do
+Mercado Pago e somente depois do pagamento aprovado a assinatura e os
+agendamentos são ativados. No chat, clientes continuam podendo conversar
+normalmente; barbeiros sem Premium veem apenas uma prévia e precisam assinar o
+Premium para ler e responder mensagens.
+
 ## 📦 Release Android
 
 Nunca use uma chave debug em produção. Gere uma chave de upload local e faça backup dos arquivos privados:

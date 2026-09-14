@@ -63,7 +63,9 @@ class ChatService {
     await _db.runTransaction((transaction) async {
       final conversationSnapshot = await transaction.get(conversationRef);
       final conversationData = <String, dynamic>{
-        'lastMessage': trimmedText,
+        'lastMessage': senderId == conversation.clientId
+            ? '$clientName enviou uma mensagem. Assine para ver e responder.'
+            : trimmedText,
         'lastMessageAt': FieldValue.serverTimestamp(),
         'lastSenderId': senderId,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -106,7 +108,9 @@ class ChatService {
               : 'Resposta de $barbershopName',
           100,
         ),
-        'body': trimmedText,
+        'body': recipientId == conversation.barberId
+            ? '$clientName enviou uma mensagem. Assine para ver e responder.'
+            : trimmedText,
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
